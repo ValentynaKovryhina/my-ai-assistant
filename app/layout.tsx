@@ -18,6 +18,12 @@ export const metadata: Metadata = {
     template: "%s · My AI Assistant",
   },
   description: "Personal AI assistant",
+  applicationName: "My AI Assistant",
+  appleWebApp: {
+    capable: true,
+    title: "Assistant",
+    statusBarStyle: "default",
+  },
   robots: { index: false, follow: false },
 };
 
