@@ -1,5 +1,14 @@
 // Prisma schema. Learn more: https://pris.ly/d/prisma-schema
 // The connection URL is configured in prisma7.config.ts (CLI) and lib/prisma.ts (runtime).
+//
+// Task Manager v2 (see claude-reports/task-manager-v2.md):
+//   Task            reusable task definition (one-time or recurring)
+//   RecurrenceRule  versioned schedule of a recurring task
+//   TaskOccurrence  one scheduled instance that the user acted on (pending/missed ones are computed)
+//   CompletionEvent append-only history of complete / skip / reopen actions
+//   ActivityEntry   activity journal: the only source of actual time spent
+//   Category        optional user-defined categories
+// Calendar dates use @db.Date (no time zone); real instants use timestamptz.
 
 generator client {
   provider = "prisma-client"
@@ -24,17 +33,182 @@ enum TaskPriority {
   URGENT
 }
 
+enum ScheduleType {
+  ONE_TIME // no recurrence: with or without a deadline (all v1 tasks)
+  CALENDAR // anchored to the calendar: daily / weekly / monthly
+  PERIOD_WINDOW // one completion per period, available from a start day, due by a due day
+  AFTER_COMPLETION // next due date = actual completion date + interval
+}
+
+enum TrackingMode {
+  COMPLETION
+  TIME
+  COMPLETION_AND_TIME
+}
+
+enum RecurrenceFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum IntervalUnit {
+  DAY
+  WEEK
+}
+
+enum MissedPolicy {
+  KEEP_OVERDUE
+  SKIP_MISSED
+}
+
+enum OccurrenceStatus {
+  OPEN // reopened after a completion or skip; treated like an unresolved occurrence
+  COMPLETED
+  SKIPPED
+}
+
+enum CompletionAction {
+  COMPLETED
+  SKIPPED
+  REOPENED
+}
+
+enum ActivitySource {
+  MANUAL
+  COMPLETION
+}
+
+model Category {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String
+  /// lower(trim(name)): case-insensitive uniqueness
+  normalizedName String   @unique @map("normalized_name")
+  color          String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  tasks          Task[]
+
+  @@map("categories")
+}
+
 model Task {
-  id          String       @id @default(uuid()) @db.Uuid
-  title       String
-  description String?
-  status      TaskStatus   @default(TODO)
-  priority    TaskPriority @default(MEDIUM)
-  dueDate     DateTime?    @map("due_date")
-  createdAt   DateTime     @default(now()) @map("created_at")
-  updatedAt   DateTime     @updatedAt @map("updated_at")
+  id               String       @id @default(uuid()) @db.Uuid
+  title            String
+  description      String?
+  status           TaskStatus   @default(TODO)
+  priority         TaskPriority @default(MEDIUM)
+  /// One-time deadline (calendar date).
+  dueDate          DateTime?    @map("due_date") @db.Date
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+  scheduleType     ScheduleType @default(ONE_TIME) @map("schedule_type")
+  trackingMode     TrackingMode @default(COMPLETION) @map("tracking_mode")
+  /// Planning estimate in minutes (1..1440). Never used as actual time.
+  estimatedMinutes Int?         @map("estimated_minutes")
+  /// One-time: not actionable before this calendar date.
+  startDate        DateTime?    @map("start_date") @db.Date
+  /// One-time: when the current completion was recorded.
+  completedAt      DateTime?    @map("completed_at") @db.Timestamptz(3)
+  /// One-time: calendar date of the current completion (may be retroactive).
+  completedOn      DateTime?    @map("completed_on") @db.Date
+  categoryId       String?      @map("category_id") @db.Uuid
+  category         Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  recurrenceRules  RecurrenceRule[]
+  occurrences      TaskOccurrence[]
+  completionEvents CompletionEvent[]
+  activities       ActivityEntry[]
 
   @@index([status])
   @@index([dueDate])
+  @@index([categoryId])
+  @@index([scheduleType, status])
   @@map("tasks")
+}
+
+/// Versioned: editing a schedule closes the current version (effectiveTo) and adds a new one,
+/// so statistics for past dates keep using the rule that applied then.
+model RecurrenceRule {
+  id             String               @id @default(uuid()) @db.Uuid
+  taskId         String               @map("task_id") @db.Uuid
+  task           Task                 @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  frequency      RecurrenceFrequency?
+  interval       Int                  @default(1)
+  intervalUnit   IntervalUnit?        @map("interval_unit")
+  /// ISO weekdays, 1 = Monday ... 7 = Sunday.
+  weekdays       Int[]                @default([])
+  monthDay       Int?                 @map("month_day")
+  windowStartDay Int?                 @map("window_start_day")
+  windowDueDay   Int?                 @map("window_due_day")
+  missedPolicy   MissedPolicy         @default(SKIP_MISSED) @map("missed_policy")
+  startsOn       DateTime             @map("starts_on") @db.Date
+  endsOn         DateTime?            @map("ends_on") @db.Date
+  effectiveFrom  DateTime             @map("effective_from") @db.Date
+  /// null = the current version.
+  effectiveTo    DateTime?            @map("effective_to") @db.Date
+  createdAt      DateTime             @default(now()) @map("created_at")
+
+  @@index([taskId, effectiveFrom])
+  @@map("recurrence_rules")
+}
+
+/// Created the first time the user completes or skips an occurrence; never deleted on reopen.
+model TaskOccurrence {
+  id               String            @id @default(uuid()) @db.Uuid
+  taskId           String            @map("task_id") @db.Uuid
+  task             Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  /// Occurrence key: calendar day, period start, or due date at the time (after-completion).
+  scheduledDate    DateTime          @map("scheduled_date") @db.Date
+  availableFrom    DateTime?         @map("available_from") @db.Date
+  dueDate          DateTime          @map("due_date") @db.Date
+  status           OccurrenceStatus
+  completedOn      DateTime?         @map("completed_on") @db.Date
+  completedAt      DateTime?         @map("completed_at") @db.Timestamptz(3)
+  note             String?
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  completionEvents CompletionEvent[]
+  activities       ActivityEntry[]
+
+  @@unique([taskId, scheduledDate])
+  @@index([taskId, completedOn])
+  @@map("task_occurrences")
+}
+
+/// Append-only history of completion actions (tasks and occurrences).
+model CompletionEvent {
+  id            String           @id @default(uuid()) @db.Uuid
+  taskId        String           @map("task_id") @db.Uuid
+  task          Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  occurrenceId  String?          @map("occurrence_id") @db.Uuid
+  occurrence    TaskOccurrence?  @relation(fields: [occurrenceId], references: [id], onDelete: SetNull)
+  action        CompletionAction
+  /// Completion date chosen by the user (COMPLETED) or the skipped occurrence's date (SKIPPED).
+  effectiveDate DateTime?        @map("effective_date") @db.Date
+  recordedAt    DateTime         @default(now()) @map("recorded_at") @db.Timestamptz(3)
+  note          String?
+
+  @@index([taskId, recordedAt])
+  @@index([occurrenceId])
+  @@map("completion_events")
+}
+
+/// Activity journal: the only source of actual minutes.
+model ActivityEntry {
+  id           String          @id @default(uuid()) @db.Uuid
+  taskId       String          @map("task_id") @db.Uuid
+  task         Task            @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  occurrenceId String?         @map("occurrence_id") @db.Uuid
+  occurrence   TaskOccurrence? @relation(fields: [occurrenceId], references: [id], onDelete: SetNull)
+  activityDate DateTime        @map("activity_date") @db.Date
+  minutes      Int?
+  note         String?
+  source       ActivitySource  @default(MANUAL)
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  @@index([taskId, activityDate])
+  @@index([occurrenceId])
+  @@map("activity_entries")
 }

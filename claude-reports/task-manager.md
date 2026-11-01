@@ -1,7 +1,7 @@
 # Task Manager Module
 
 **Date:** 2026-11-01
-**Status:** ✅ Implemented, tested locally and approved by the user. Committed in `feat: implement task manager`; see "Deployment" below for the production result.
+**Status:** ✅ Implemented, tested locally and approved by the user. Committed (`5dd97fd`), pushed to `origin/main`, and deployed to Vercel Production. Production checks passed.
 
 ## Summary
 
@@ -145,6 +145,34 @@ No changes to the Prisma schema, migrations, auth configuration (`auth.ts`), env
    - `node-pg` reads `timestamp without time zone` as local time, which caused one false failure. The test now compares the raw SQL text.
    - One bash heredoc couldn't be parsed, so the test scripts were written as files instead.
    - One test helper didn't handle relative `Location` headers.
+
+## Deployment
+
+| Item | Result |
+|---|---|
+| Schema and migrations | ✅ Not required, checked before committing. `schema.prisma` matches the applied `20261101000000_init` SQL exactly. Live Neon vs. schema: "This is an empty migration". `prisma migrate status`: "Database schema is up to date!" No migration was run |
+| Pre-commit checks | ✅ 15 files. No secrets (compared against the real local env values, never printed, plus a pattern scan). No `.env` files or temporary test scripts. `tsc`, lint and build passed |
+| Commit | `5dd97fda86079b0d78c896a9f960c47256bfd47b` (`5dd97fd`), `feat: implement task manager` |
+| Push | ✅ `c78c0a3..5dd97fd main -> main`, a fast-forward (no force push). Local `main` and `origin/main` are in sync |
+| Vercel | ✅ `success`, "Deployment has completed" (2026-11-01T01:32:00Z UTC). Deployment page: https://vercel.com/123456789-aaa5/my-ai-assistant/NXmbngvSEzJ2eopn7jv5rCfugwAt |
+| **Production URL** | **https://my-ai-assistant-eta-jet.vercel.app/tasks** |
+
+**Production checks** (no sign-in, nothing modified):
+
+| Check | Result |
+|---|---|
+| `/tasks` and `/tasks?filter=overdue` while signed out | ✅ 307 to `/login`. `/tasks` is deployed and the new proxy rule is active; before this deployment it would have returned 404 |
+| `/tasks` with a forged session cookie | ✅ 307 to `/login` |
+| `/`, `/dashboard` | ✅ 307 to `/login` |
+| `/login`, `/manifest.webmanifest` | ✅ 200 |
+| `/api/me` | ✅ 401 |
+| Unknown route | ✅ 404 |
+| Google OAuth callback URL | ✅ Unchanged (`https://my-ai-assistant-eta-jet.vercel.app/api/auth/callback/google`) |
+| Signed-out `createTask` Server Action sent directly to production | ✅ 307 to `/login`. The Neon task count was 1 before and 1 after (read-only count), with no probe row created |
+
+**Existing user data:** Neon contained **1 task** at deployment time, presumably created by the user. It was only counted (read-only), never read in detail, modified or deleted. No migrations were run.
+
+**Not done by Claude:** a signed-in production test, which needs the owner's Google account. Use the checklist below.
 
 ## Errors / unresolved issues and limitations
 

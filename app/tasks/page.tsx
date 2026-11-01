@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { requireUser } from "@/lib/dal";
-import { getTaskCounts, getToday, listTasks, parseTaskFilter } from "@/lib/tasks/queries";
-import type { TaskCounts, TaskFilter } from "@/lib/tasks/shared";
+import { getTaskList, getToday, listCategories, parseCategoryFilter, parseTaskFilter } from "@/lib/tasks/queries";
+import type { CategoryView, TaskCounts, TaskFilter } from "@/lib/tasks/shared";
 import { TaskForm } from "./_components/task-form";
 import { TaskItem } from "./_components/task-item";
+import { EmptyState, PageBody, PageHeader, PageShell } from "./_components/ui";
 
 export const metadata: Metadata = {
   title: "Tasks",
@@ -21,76 +22,99 @@ const FILTER_LABELS: Record<TaskFilter, string> = {
 const EMPTY_STATES: Record<TaskFilter, { title: string; body: string }> = {
   all: { title: "No tasks yet", body: "Add your first task above." },
   active: { title: "All caught up", body: "You have no active tasks." },
-  completed: { title: "Nothing completed yet", body: "Completed tasks will appear here." },
-  overdue: { title: "Nothing overdue", body: "Every task with a due date is on track." },
+  completed: { title: "Nothing completed yet", body: "Completed one-time tasks will appear here." },
+  overdue: { title: "Nothing overdue", body: "Every deadline and scheduled task is on track." },
 };
+
+const toolbarLink =
+  "flex h-10 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800";
 
 export default function TasksPage({ searchParams }: PageProps<"/tasks">) {
   return (
-    <main className="flex flex-1 flex-col bg-zinc-50 pb-[env(safe-area-inset-bottom)] dark:bg-zinc-950">
-      <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/90">
-        <div className="mx-auto flex h-14 w-full max-w-2xl items-center gap-2 px-2">
-          <Link
-            href="/dashboard"
-            aria-label="Back to dashboard"
-            className="flex h-11 w-11 items-center justify-center rounded-full text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
-          >
-            <svg aria-hidden="true" viewBox="0 0 20 20" className="h-5 w-5" fill="none">
-              <path d="M12.5 4.5L7 10l5.5 5.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </Link>
-          <h1 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            Tasks
-          </h1>
-        </div>
-      </header>
+    <PageShell>
+      <PageHeader title="Tasks" backHref="/dashboard" backLabel="Back to dashboard">
+        <Link href="/tasks/find" className={toolbarLink}>
+          <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4" fill="none">
+            <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.8" />
+            <path d="M10 6v4l2.5 2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          </svg>
+          <span>Find</span>
+        </Link>
+        <Link href="/tasks/categories" className={toolbarLink} aria-label="Manage categories">
+          <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4" fill="none">
+            <path d="M3 5.5h14M3 10h14M3 14.5h8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          </svg>
+          <span className="hidden sm:inline">Categories</span>
+        </Link>
+      </PageHeader>
 
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-5">
-        <section
-          aria-label="New task"
-          className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
-        >
-          <TaskForm />
-        </section>
+      <PageBody>
+        <Suspense fallback={<NewTaskSkeleton />}>
+          <NewTaskSection />
+        </Suspense>
 
         <Suspense fallback={<TaskListSkeleton />}>
           <TaskList searchParams={searchParams} />
         </Suspense>
-      </div>
-    </main>
+      </PageBody>
+    </PageShell>
+  );
+}
+
+async function NewTaskSection() {
+  await requireUser();
+  const [today, categories] = await Promise.all([getToday(), listCategories()]);
+  return (
+    <section aria-label="New task" className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <TaskForm categories={categories} today={today} />
+    </section>
   );
 }
 
 async function TaskList({ searchParams }: Pick<PageProps<"/tasks">, "searchParams">) {
   await requireUser();
-  const filter = parseTaskFilter((await searchParams).filter);
+  const params = await searchParams;
+  const filter = parseTaskFilter(params.filter);
+  const category = parseCategoryFilter(params.category);
   const today = await getToday();
-  const [tasks, counts] = await Promise.all([listTasks(filter, today), getTaskCounts(today)]);
+  const [{ tasks, counts }, categories] = await Promise.all([getTaskList(filter, category, today), listCategories()]);
 
   return (
     <>
-      <FilterTabs active={filter} counts={counts} />
+      <div className="flex flex-col gap-2">
+        <FilterTabs active={filter} counts={counts} category={category} />
+        {categories.length > 0 && <CategoryTabs categories={categories} active={category} filter={filter} />}
+      </div>
       {tasks.length > 0 ? (
         <ul className="flex flex-col gap-3">
           {tasks.map((task) => (
-            <TaskItem key={task.id} task={task} today={today} />
+            <TaskItem key={task.id} task={task} today={today} categories={categories} />
           ))}
         </ul>
       ) : (
-        <div className="rounded-2xl border border-dashed border-zinc-300 px-6 py-12 text-center dark:border-zinc-700">
-          <p className="font-medium text-zinc-900 dark:text-zinc-50">
-            {EMPTY_STATES[filter].title}
-          </p>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            {EMPTY_STATES[filter].body}
-          </p>
-        </div>
+        <EmptyState title={EMPTY_STATES[filter].title} body={category ? "Nothing here in this category." : EMPTY_STATES[filter].body} />
       )}
     </>
   );
 }
 
-function FilterTabs({ active, counts }: { active: TaskFilter; counts: TaskCounts }) {
+function listHref(filter: TaskFilter, category: string | null): string {
+  const params = new URLSearchParams();
+  if (filter !== "all") params.set("filter", filter);
+  if (category) params.set("category", category);
+  const query = params.toString();
+  return query ? `/tasks?${query}` : "/tasks";
+}
+
+function pillClass(active: boolean) {
+  return `flex h-10 items-center gap-1.5 whitespace-nowrap rounded-full px-4 text-sm font-medium transition-colors ${
+    active
+      ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+      : "border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+  }`;
+}
+
+function FilterTabs({ active, counts, category }: { active: TaskFilter; counts: TaskCounts; category: string | null }) {
   return (
     <nav aria-label="Filter tasks" className="-mx-4 overflow-x-auto px-4">
       <ul className="flex gap-2">
@@ -98,16 +122,7 @@ function FilterTabs({ active, counts }: { active: TaskFilter; counts: TaskCounts
           const isActive = filter === active;
           return (
             <li key={filter}>
-              <Link
-                href={filter === "all" ? "/tasks" : `/tasks?filter=${filter}`}
-                scroll={false}
-                aria-current={isActive ? "page" : undefined}
-                className={`flex h-10 items-center gap-1.5 whitespace-nowrap rounded-full px-4 text-sm font-medium transition-colors ${
-                  isActive
-                    ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                    : "border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                }`}
-              >
+              <Link href={listHref(filter, category)} scroll={false} aria-current={isActive ? "page" : undefined} className={pillClass(isActive)}>
                 {FILTER_LABELS[filter]}
                 <span
                   className={`text-xs ${
@@ -127,6 +142,39 @@ function FilterTabs({ active, counts }: { active: TaskFilter; counts: TaskCounts
       </ul>
     </nav>
   );
+}
+
+function CategoryTabs({ categories, active, filter }: { categories: CategoryView[]; active: string | null; filter: TaskFilter }) {
+  const items: { id: string | null; name: string }[] = [{ id: null, name: "All categories" }, ...categories, { id: "none", name: "Uncategorized" }];
+  return (
+    <nav aria-label="Filter by category" className="-mx-4 overflow-x-auto px-4">
+      <ul className="flex gap-2">
+        {items.map((item) => {
+          const isActive = item.id === active;
+          return (
+            <li key={item.id ?? "all"}>
+              <Link
+                href={listHref(filter, item.id)}
+                scroll={false}
+                aria-current={isActive ? "page" : undefined}
+                className={`flex h-9 items-center whitespace-nowrap rounded-full px-3 text-sm transition-colors ${
+                  isActive
+                    ? "bg-violet-600 font-medium text-white"
+                    : "bg-violet-50 text-violet-800 hover:bg-violet-100 dark:bg-violet-950 dark:text-violet-200 dark:hover:bg-violet-900"
+                }`}
+              >
+                {item.name}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
+}
+
+function NewTaskSkeleton() {
+  return <div aria-busy="true" aria-label="Loading form" className="h-[156px] animate-pulse rounded-2xl bg-zinc-200 dark:bg-zinc-800" />;
 }
 
 function TaskListSkeleton() {
