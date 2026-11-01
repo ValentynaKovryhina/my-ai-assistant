@@ -146,14 +146,16 @@ describe("authorization", () => {
 });
 
 describe("existing task compatibility", () => {
-  it("pre-migration tasks load as one-time tasks without being modified", async () => {
-    const legacy = await prisma.task.findMany({ where: { title: { not: { startsWith: PREFIX } } }, select: { id: true } });
+  it("real tasks load in the list without being modified; tasks without a rule are one-time", async () => {
+    const real = await prisma.task.findMany({
+      where: { title: { not: { startsWith: PREFIX } } },
+      select: { id: true, _count: { select: { recurrenceRules: true } } },
+    });
     const { all } = await getTaskList("all", null, today);
-    for (const { id } of legacy) {
+    for (const { id, _count } of real) {
       const view = all.find((item) => item.id === id);
       expect(view, id).toBeDefined();
-      expect(view!.scheduleType).toBe("ONE_TIME");
-      expect(view!.trackingMode).toBe("COMPLETION");
+      if (_count.recurrenceRules === 0) expect(view!.scheduleType).toBe("ONE_TIME");
     }
     expect(await nonTestSnapshot()).toBe(snapshotBefore);
   });

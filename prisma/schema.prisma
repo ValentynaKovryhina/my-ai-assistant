@@ -212,3 +212,27 @@ model ActivityEntry {
   @@index([occurrenceId])
   @@map("activity_entries")
 }
+
+// ---------------- Weight Tracker ----------------
+
+/// One measurement per calendar day (Europe/Prague date). BMI is calculated, never stored.
+model WeightEntry {
+  id         String   @id @default(uuid()) @db.Uuid
+  measuredOn DateTime @unique @map("measured_on") @db.Date
+  /// Kilograms, up to 2 decimal places.
+  weightKg   Decimal  @map("weight_kg") @db.Decimal(5, 2)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("weight_entries")
+}
+
+/// Weight Tracker settings: exactly one row (id = 1), created by the migration.
+model WeightSettings {
+  id           Int      @id @default(1)
+  heightCm     Decimal  @default(164) @map("height_cm") @db.Decimal(4, 1)
+  goalWeightKg Decimal  @default(55) @map("goal_weight_kg") @db.Decimal(5, 2)
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("weight_settings")
+}

@@ -14,7 +14,8 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:migrate:status": "prisma migrate status",
     "test": "vitest run",
-    "test:db": "vitest run --config vitest.db.config.mts"
+    "test:db": "vitest run --config vitest.db.config.mts",
+    "test:local": "vitest run --config vitest.local.config.mts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",

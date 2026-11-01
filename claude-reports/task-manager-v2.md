@@ -1,7 +1,7 @@
 # Task Manager v2: Planning, Recurrence, Activity Journal, Analytics
 
 **Dates:** 2026-11-01 – 2026-11-02
-**Status:** ✅ Implemented and tested locally. The migration is **applied to Neon** (approved as D10). **Not committed, pushed or deployed.** Waiting for your review.
+**Status:** ✅ Implemented, tested, **committed (`9b49756`), pushed to `origin/main` and deployed to Vercel Production** (approved as D11). Production checks passed. Signed-in checks on the phone are left to you (checklist in §12).
 
 ---
 
@@ -19,7 +19,7 @@
 | D8 | Missed-policy defaults: SKIP_MISSED (calendar), KEEP_OVERDUE (window) | ✅ Implemented; editable per task |
 | D9 | Reopening never deletes history (occurrence → `OPEN`, append-only events, journal kept) | ✅ Implemented and tested |
 | D10 | Apply `20261101120000_task_manager_v2` to Neon | ✅ Approved and applied (§4) |
-| **D11** | **Commit, push, deploy** | ⏳ **Waiting for your approval** |
+| D11 | Commit, push, deploy | ✅ Approved and done (§12) |
 
 ---
 
@@ -224,3 +224,60 @@ Pending, upcoming and missed occurrences are **computed**, never stored, so no b
 | App | `app/tasks/{page,actions}.tsx/ts` (changed); `journal-actions.ts`, `category-actions.ts`, `[id]/page.tsx`, `[id]/not-found.tsx`, `[id]/analytics/page.tsx`, `find/page.tsx`, `categories/page.tsx` (new); `_components/{task-form,task-item}.tsx` (changed), `_components/{ui,complete-control,journal,task-manage,charts,category-manager}.tsx` (new) |
 | Tests / tooling | `tests/unit/*` (5 files), `tests/integration/task-manager.test.ts`, `tests/stubs/server-only.ts`, `vitest.config.mts`, `vitest.db.config.mts`, `package.json` (`test`, `test:db`, `vitest`), `package-lock.json` |
 | Unchanged | `auth.ts`, `lib/dal.ts`, `proxy.ts`, `app/dashboard/page.tsx` (it uses the updated `getTaskCounts`), env files |
+
+---
+
+## 12. Deployment (D11)
+
+### Pre-deployment checks
+
+| Check | Result |
+|---|---|
+| `tsc --noEmit`, `npm run lint` | ✅ |
+| Unit tests (`npm test`) | ✅ 67/67 |
+| Production build | ✅ |
+| Neon migration | ✅ `migrate status`: 2 migrations, "Database schema is up to date!"; `migrate diff` DB ↔ schema: "No difference detected." **No migration was run in this step** |
+| Existing tasks | ✅ 3 tasks; v1-shape hash `5f5bde5a…` identical to the pre-migration hash |
+| Staged files | ✅ 43 files. No `.env*`, `generated/`, `.next/`, dumps or backups. Secret scan: no real env values (compared without printing) and no credential patterns |
+| Unrelated changes | ✅ None. `package.json` only adds the `test` / `test:db` scripts and `vitest`. The lockfile adds 58 packages (vitest and its deps), with 0 removed and 0 version changes. `claude-reports/task-manager.md` contains the v1 deployment record from the previous session that was never committed (documentation only). `AGENTS.md` and `next-env.d.ts` unchanged |
+
+### Commit, push, deployment
+
+| Item | Result |
+|---|---|
+| Commit | `9b497560b01526ffaf90429410e5544f70d94a90` (`9b49756`) "feat: task manager v2 with recurrence, journal and analytics" |
+| Push | ✅ `5dd97fd..9b49756 main -> main`, a fast-forward (no force push); `main` is in sync with `origin/main` |
+| Vercel | ✅ `success`, "Deployment has completed" (2026-11-01T23:18:16Z UTC). Deployment page: https://vercel.com/123456789-aaa5/my-ai-assistant/GUsKd21r9cMjFHydgmfhgh4hgeRH |
+| **Production URL** | **https://my-ai-assistant-eta-jet.vercel.app/tasks** |
+
+### Production checks (no sign-in, nothing modified)
+
+| Check | Result |
+|---|---|
+| Signed out: `/tasks`, `/tasks?filter=overdue&category=none`, `/tasks/:id`, `/tasks/:id/analytics`, `/tasks/find?minutes=15`, `/tasks/categories`, `/dashboard`, `/` | ✅ 307 → `/login` |
+| Forged session cookie on `/tasks` | ✅ 307 → `/login` |
+| Task data in the signed-out response | ✅ None (0 matches for the existing task titles) |
+| `/login`, `/manifest.webmanifest` | ✅ 200 |
+| `/api/me` | ✅ 401 |
+| Unknown route | ✅ 404 |
+| Database counts before / after the checks | ✅ Identical: tasks 3, occurrences 0, events 0, journal 0, categories 0 |
+
+**Schema in production:** the Neon database that Vercel uses is on the v2 schema (verified with `migrate status` / `migrate diff`), and the deployment is for commit `9b49756`, which contains the v2 code. Claude could not render the signed-in pages in production: that needs your Google sign-in, and the production `AUTH_SECRET` is not available locally (correctly). **The first signed-in page load is the end-to-end proof**: if `/tasks` shows "More options" and your 3 tasks, the deployed code is reading the v2 schema.
+
+### Remaining issues
+
+- Signed-in testing in production and on Android (below) is still to be done by you.
+- The known limitations from §9 still apply, including the Prisma `pg` deprecation warning, the 366-day overdue lookback, and no "ends on" field in the form.
+- This report update (the deployment section) is **not committed yet**; it can go into the next commit.
+
+### Manual test checklist (production, signed in)
+
+1. [ ] Open `/tasks`: your 3 existing tasks are listed; "Слить воду с орхидей" shows its deadline chip.
+2. [ ] Create "German" → More options → Repeat: On a schedule, Daily; Track: Completion and time; Estimate 20. Tap the circle, enter 25 min, then Complete.
+3. [ ] Open the task → Activity journal → log 20 min for yesterday. Analytics → "This week" shows 45 min.
+4. [ ] Create "Financial report" → Monthly window, from day 1, due day 25 → complete it → "Done for this period"; Upcoming shows Dec 1.
+5. [ ] Create "Water orchids" → After completion, every 7 days → Complete… with a past date → the next due date is 7 days after that date.
+6. [ ] Reopen a completion → Completion history shows Completed + Reopened; the journal entry is still there.
+7. [ ] Find → 15 min: only tasks with an estimate ≤ 15 appear.
+8. [ ] Categories: add "Home", assign it to a task, filter the list by it.
+9. [ ] On Android (installed PWA): forms don't zoom, buttons are easy to tap, dark mode looks right.

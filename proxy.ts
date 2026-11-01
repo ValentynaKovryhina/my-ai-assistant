@@ -27,5 +27,5 @@ export default auth((req) => {
 
 // Explicit list keeps static assets (and a future PWA manifest/service worker) out of the proxy.
 export const config = {
-  matcher: ["/", "/login", "/dashboard/:path*", "/tasks/:path*"],
+  matcher: ["/", "/login", "/dashboard/:path*", "/tasks/:path*", "/weight/:path*"],
 };

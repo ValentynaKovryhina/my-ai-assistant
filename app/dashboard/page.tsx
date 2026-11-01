@@ -4,7 +4,10 @@ import { unstable_rethrow } from "next/navigation";
 import { Suspense } from "react";
 import { signOutAction } from "@/app/actions/auth";
 import { requireUser } from "@/lib/dal";
+import { formatShortDate } from "@/lib/tasks/dates";
 import { getTaskCounts, getToday } from "@/lib/tasks/queries";
+import { getLatestWeight } from "@/lib/weight/queries";
+import { formatKg } from "@/lib/weight/shared";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -67,6 +70,22 @@ async function Dashboard() {
               <TaskSummary />
             </Suspense>
           </Link>
+          <Link
+            href="/weight"
+            className="group rounded-2xl border border-zinc-200 bg-white p-6 transition-colors hover:border-zinc-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-600 dark:focus-visible:outline-zinc-100"
+          >
+            <h2 className="flex items-center justify-between font-medium text-zinc-900 dark:text-zinc-50">
+              Weight
+              <span aria-hidden="true" className="text-zinc-400 transition-transform group-hover:translate-x-0.5">
+                →
+              </span>
+            </h2>
+            <Suspense
+              fallback={<p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Loading…</p>}
+            >
+              <WeightSummary />
+            </Suspense>
+          </Link>
           <PlaceholderCard title="Assistant" description="Chat with your assistant here." />
         </div>
       </div>
@@ -97,6 +116,20 @@ async function TaskSummary() {
       )}
     </p>
   );
+}
+
+async function WeightSummary() {
+  let summary: string;
+  try {
+    const [latest, today] = await Promise.all([getLatestWeight(), getToday()]);
+    summary = latest
+      ? `${formatKg(latest.weightKg)} kg · ${formatShortDate(latest.measuredOn, today)}`
+      : "No measurements yet.";
+  } catch (error) {
+    unstable_rethrow(error);
+    summary = "Open the weight tracker.";
+  }
+  return <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{summary}</p>;
 }
 
 function PlaceholderCard({ title, description }: { title: string; description: string }) {
