@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { unstable_rethrow } from "next/navigation";
 import { Suspense } from "react";
 import { signOutAction } from "@/app/actions/auth";
 import { requireUser } from "@/lib/dal";
+import { getTaskCounts, getToday } from "@/lib/tasks/queries";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -48,11 +51,51 @@ async function Dashboard() {
         </p>
 
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
-          <PlaceholderCard title="Tasks" description="Your tasks will appear here." />
+          <Link
+            href="/tasks"
+            className="group rounded-2xl border border-zinc-200 bg-white p-6 transition-colors hover:border-zinc-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-600 dark:focus-visible:outline-zinc-100"
+          >
+            <h2 className="flex items-center justify-between font-medium text-zinc-900 dark:text-zinc-50">
+              Tasks
+              <span aria-hidden="true" className="text-zinc-400 transition-transform group-hover:translate-x-0.5">
+                →
+              </span>
+            </h2>
+            <Suspense
+              fallback={<p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Loading…</p>}
+            >
+              <TaskSummary />
+            </Suspense>
+          </Link>
           <PlaceholderCard title="Assistant" description="Chat with your assistant here." />
         </div>
       </div>
     </>
+  );
+}
+
+async function TaskSummary() {
+  let summary: string;
+  let overdue = 0;
+  try {
+    const counts = await getTaskCounts(await getToday());
+    overdue = counts.overdue;
+    summary =
+      counts.active === 0
+        ? "No active tasks."
+        : `${counts.active} active ${counts.active === 1 ? "task" : "tasks"}`;
+  } catch (error) {
+    unstable_rethrow(error);
+    summary = "Open your task list.";
+  }
+
+  return (
+    <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+      {summary}
+      {overdue > 0 && (
+        <span className="font-medium text-red-600 dark:text-red-400"> · {overdue} overdue</span>
+      )}
+    </p>
   );
 }
 

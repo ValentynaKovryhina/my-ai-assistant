@@ -2,6 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { auth, isAllowedEmail } from "@/auth";
 
 export type AuthorizedUser = {
@@ -16,6 +17,8 @@ export type AuthorizedUser = {
  * Use in Route Handlers (respond with 401 when null).
  */
 export const getAuthorizedUser = cache(async (): Promise<AuthorizedUser | null> => {
+  // Session checks are request-time only; auth() uses crypto randomness that must not run during prerendering.
+  await connection();
   const session = await auth();
   const email = session?.user?.email;
   if (!email || !isAllowedEmail(email)) return null;

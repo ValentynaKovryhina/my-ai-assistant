@@ -1,7 +1,7 @@
 # PWA Setup: Installable App (Manifest and Icons)
 
 **Date:** 2026-11-01
-**Status:** ✅ Implemented, verified locally and approved by the user. Committed in `feat: add installable PWA support`; see "Deployment" below for the production result.
+**Status:** ✅ Implemented, verified locally and approved by the user. Committed (`c78c0a3`), pushed to `origin/main`, and deployed to Vercel Production. Production check passed.
 
 ## Summary
 
@@ -84,6 +84,27 @@ None.
 - The app opens on the dashboard if you're signed in, or the login page if not.
 - Google sign-in works inside the installed app (it may briefly show Google in an in-app browser sheet, then return).
 - "Sign out" works.
+
+## Deployment
+
+| Item | Result |
+|---|---|
+| Commit | `c78c0a3e0fa791a39af4041fe374407840838dd8` (`c78c0a3`), `feat: add installable PWA support` |
+| Pre-commit checks | ✅ No secrets: 13 files compared against the real local env values (never printed), plus a pattern scan. No `.env` files. `tsc`, lint and build passed |
+| Push | ✅ `ba523de..c78c0a3 main -> main`, a fast-forward (no force push). Local `main` and `origin/main` are in sync |
+| Vercel | ✅ `success`, "Deployment has completed" (2026-11-01T01:12:53Z UTC). Deployment page: https://vercel.com/123456789-aaa5/my-ai-assistant/2oYhyZLH224ykgTYc7M3Kcm3xp64 |
+
+**Production check** at https://my-ai-assistant-eta-jet.vercel.app (HTTPS, no cookies):
+
+| Check | Result |
+|---|---|
+| `/manifest.webmanifest` | ✅ 200 `application/manifest+json`, valid TLS, no redirect. Name, short name, `standalone`, `start_url` and `scope` `/` are correct |
+| The four manifest icons, `/apple-icon.png` and `/favicon.ico` | ✅ All 200 over HTTPS with no redirect. The real pixel sizes match the manifest |
+| `<head>` | ✅ `<link rel="manifest">` and `<link rel="apple-touch-icon">` are present |
+| Authentication | ✅ Unchanged. `/` and `/dashboard` 307 to `/login`; `/login` 200; `/api/me` 401; the OAuth callback URL is unchanged |
+| Service worker | ✅ None (`/sw.js` returns 404) |
+
+Not done by Claude: installing the app on a real Android device. Use the installation steps above.
 
 ## Errors / unresolved issues and limitations
 
